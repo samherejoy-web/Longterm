@@ -469,6 +469,13 @@ function App() {
           </div>
         )}
 
+        {/* Traits Tab */}
+        {activeTab === 'traits' && (
+          <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl p-6" data-testid="traits-panel">
+            <TraitsPanel />
+          </div>
+        )}
+
         {/* Training Tab */}
         {activeTab === 'train' && (
           <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl p-6" data-testid="training-panel">
