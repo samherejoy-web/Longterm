@@ -1,0 +1,59 @@
+# Multilingual dataset configuration for Sanskrit, Hindi, English
+
+# This config references synthetic data generated via scripts/cli/generate_data.py
+
+datasets:
+  - name: sanskrit_synthetic
+    dataset: data/synthetic
+    split: train
+    text_column: text
+    sample_limit: 100000
+    data_files: sanskrit_synthetic.jsonl
+    language: sanskrit
+    weight: 0.33
+
+  - name: hindi_synthetic
+    dataset: data/synthetic
+    split: train
+    text_column: text
+    sample_limit: 100000
+    data_files: hindi_synthetic.jsonl
+    language: hindi
+    weight: 0.33
+
+  - name: english_synthetic
+    dataset: data/synthetic
+    split: train
+    text_column: text
+    sample_limit: 100000
+    data_files: english_synthetic.jsonl
+    language: english
+    weight: 0.34
+
+# Optional: Add reasoning chains
+  - name: sanskrit_reasoning
+    dataset: data/synthetic
+    split: train
+    text_column: reasoning
+    sample_limit: 10000
+    data_files: sanskrit_reasoning.jsonl
+    language: sanskrit
+    weight: 0.05
+
+  - name: hindi_reasoning
+    dataset: data/synthetic
+    split: train
+    text_column: reasoning
+    sample_limit: 10000
+    data_files: hindi_reasoning.jsonl
+    language: hindi
+    weight: 0.05
+
+  - name: english_reasoning
+    dataset: data/synthetic
+    split: train
+    text_column: reasoning
+    sample_limit: 10000
+    data_files: english_reasoning.jsonl
+    language: english
+    weight: 0.05

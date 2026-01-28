@@ -1,0 +1,163 @@
+defaults:
+  - _self_
+
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  job:
+    chdir: false
+
+model:
+  vocab_size: 32000
+  dim: 1536
+  num_layers: 32
+  heads: 24
+  block_variant: hope_selfmod  # Self-modifying Titans for reasoning
+  surprise_threshold: 0.01  # Gate updates on surprise
+  surprise_metric: l2  # Use L2 norm of teach signal
+  freeze_backbone: false
+  
+  # TITAN memory layer
+  titan_level:
+    name: titan
+    update_period: 32
+    optimizer_key: titan_opt
+  
+  # CMS levels for hierarchical memory
+  cms_levels:
+    - name: cms_fast
+      update_period: 1
+      optimizer_key: cms_fast_opt
+    - name: cms_mid
+      update_period: 4
+      optimizer_key: cms_mid_opt
+    - name: cms_slow
+      update_period: 32
+      optimizer_key: cms_slow_opt
+    - name: cms_ultra
+      update_period: 128
+      optimizer_key: cms_slow_opt
+    - name: cms_anchor
+      update_period: 512
+      optimizer_key: cms_anchor_opt
+  
+  # Per-level optimizers
+  optimizers:
+    titan_opt:
+      type: deep_momentum
+      lr: 6.0e-4
+      params:
+        beta: 0.9
+        beta2: 0.999
+        variant: nl_l2_precond
+    cms_fast_opt:
+      type: deep_momentum
+      lr: 3.0e-4
+      params:
+        beta: 0.9
+        beta2: 0.999
+        variant: nl_l2_precond
+    cms_mid_opt:
+      type: deep_momentum
+      lr: 2.5e-4
+      params:
+        beta: 0.9
+        beta2: 0.999
+        variant: nl_l2_precond
+    cms_slow_opt:
+      type: deep_momentum
+      lr: 2.0e-4
+      params:
+        beta: 0.9
+        beta2: 0.999
+        variant: nl_l2_precond
+    cms_anchor_opt:
+      type: deep_momentum
+      lr: 1.5e-4
+      params:
+        beta: 0.9
+        beta2: 0.999
+        variant: nl_l2_precond
+
+data:
+  source: mixture
+  seq_len: 2048  # Increased for multilingual context
+  batch_size: 32
+  num_workers: 8
+  mixture:
+    samples_per_epoch: 65536  # ~30B tokens with seq_len=2048
+    seed: 123
+    sources:
+      # Multilingual synthetic data (primary)
+      - name: sanskrit_synthetic
+        shards_dir: data/shards/sanskrit_synthetic
+        weight: 0.30
+      - name: hindi_synthetic
+        shards_dir: data/shards/hindi_synthetic
+        weight: 0.30
+      - name: english_synthetic
+        shards_dir: data/shards/english_synthetic
+        weight: 0.30
+      # Reasoning chains (for better reasoning capability)
+      - name: multilingual_reasoning
+        shards_dir: data/shards/reasoning
+        weight: 0.10
+
+train:
+  online_updates: true
+  online_chunk_size: 0  # Auto-infer based on update periods
+  per_layer_teach_signal: true
+  use_fast_state: true  # Use per-context fast state for proper nested learning
+  steps: 500000  # ~30B tokens with batch_size=32, seq_len=2048
+  log_interval: 100
+  device: "cuda:0"
+  seed: 42
+  deterministic: false
+  step_offset: 0
+  
+  # Mixed precision for efficiency
+  mixed_precision:
+    enabled: true
+    dtype: bf16
+  
+  # torch.compile for speed
+  compile:
+    enable: true
+    mode: max-autotune
+    strict: false
+  
+  # FSDP for distributed training
+  fsdp:
+    auto_wrap_min_params: 2000000
+    cpu_offload: false
+  
+  # Checkpoint management
+  checkpoint:
+    enable: true
+    dir: artifacts/checkpoints/multilingual_production
+    save_interval: 1000
+    resume_path: null
+    resume_tag: null
+
+# Muon optimizer (default for HOPE models)
+optim:
+  type: muon
+  lr: 1.5e-4
+  weight_decay: 0.02
+  momentum: 0.95
+  betas:
+    - 0.9
+    - 0.999
+
+# Logging
+logging:
+  enabled: true
+  backend: wandb
+  project: nested-learning-multilingual
+  run_name: multilingual-production-${now:%Y%m%d%H%M%S}
+  path: logs/multilingual_production_metrics.json
+
+# DeepSpeed config (optional, for ZeRO-3)
+deepspeed:
+  config: configs/deepspeed/zero3.json
