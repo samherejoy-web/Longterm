@@ -140,7 +140,12 @@ def load_model_from_checkpoint(checkpoint_path: str, config_path: str):
         
         # Extract config from checkpoint or file
         if isinstance(checkpoint, dict) and 'config' in checkpoint:
-            config_dict = checkpoint['config']
+            full_config = checkpoint['config']
+            # Extract model config from nested structure
+            if isinstance(full_config, dict) and 'model' in full_config:
+                config_dict = full_config['model']
+            else:
+                config_dict = full_config
         else:
             # Try loading from config file (JSON or YAML)
             if config_path.endswith('.json'):
