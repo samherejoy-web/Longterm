@@ -190,6 +190,24 @@ function App() {
     }
   };
 
+  const createSyntheticData = async () => {
+    setIsLoading(true);
+    try {
+      const response = await axios.post(`${BACKEND_URL}/api/train/create-synthetic`);
+      
+      if (response.data.success) {
+        alert(`✅ Synthetic data created successfully!\n\nFiles:\n- Train: ${response.data.files.train_jsonl}\n- Val: ${response.data.files.val_jsonl}\n- Text: ${response.data.files.train_txt}`);
+        // Reload datasets
+        await loadDatasets();
+      }
+    } catch (error) {
+      console.error('Synthetic data error:', error);
+      alert(`❌ Failed to create synthetic data: ${error.response?.data?.detail || error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const startTraining = async () => {
     if (trainingStatus?.is_training) {
       alert('Training already in progress');
