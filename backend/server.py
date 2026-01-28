@@ -538,6 +538,8 @@ async def test_memorization(request: ChatRequest):
 async def create_synthetic_dataset():
     """Create synthetic training data"""
     try:
+        # Import from the correct path
+        sys.path.insert(0, '/app/scripts')
         from create_synthetic_data import create_synthetic_data
         train_file, val_file, text_file = create_synthetic_data()
         return {
@@ -550,7 +552,7 @@ async def create_synthetic_dataset():
             "message": "Synthetic dataset created successfully"
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create synthetic data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create synthetic data: {str(e)}\n{traceback.format_exc()}")
 
 if __name__ == "__main__":
     import uvicorn
