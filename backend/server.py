@@ -192,16 +192,35 @@ def load_model_from_checkpoint(checkpoint_path: str, config_path: str):
         model.load_state_dict(state_dict)
         model.eval()
         
-        # Initialize fast state for in-context learning
+        # Initialize fast state for in-context learning (Nested Learning semantics)
         fast_state = model.init_fast_state()
+        
+        # Try to load tokenizer
+        tokenizer = None
+        tokenizer_paths = [
+            "/app/artifacts/tokenizer/tokenizer.model",
+            "/app/tests/data/tiny_tokenizer.model",
+        ]
+        for tok_path in tokenizer_paths:
+            if os.path.exists(tok_path):
+                try:
+                    tokenizer = SentencePieceTokenizer(tok_path)
+                    print(f"✅ Loaded tokenizer from {tok_path}")
+                    break
+                except Exception as e:
+                    print(f"⚠️ Failed to load tokenizer from {tok_path}: {e}")
+        
+        if tokenizer is None:
+            print("⚠️ No tokenizer found. Using character-level tokenization.")
         
         # Store in global state
         model_state.model = model
+        model_state.tokenizer = tokenizer
         model_state.config = model_config
         model_state.current_checkpoint = checkpoint_path
         model_state.fast_state = fast_state
         
-        return True, "Model loaded successfully"
+        return True, f"Model loaded successfully. Tokenizer: {'✅ Loaded' if tokenizer else '⚠️ Character-level fallback'}"
     except Exception as e:
         return False, f"Error loading model: {str(e)}\n{traceback.format_exc()}"
 
