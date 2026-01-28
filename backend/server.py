@@ -36,6 +36,7 @@ class ModelState:
         self.config: Optional[Any] = None
         self.current_checkpoint: Optional[str] = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.fast_state: Optional[Any] = None
         self.training_status = {
             "is_training": False,
             "progress": 0,
