@@ -205,11 +205,56 @@ def generate_text(prompt: str, max_length: int = 100, temperature: float = 0.8, 
         return "[ERROR: No model loaded. Please load a model first.]"
     
     try:
-        # This is a placeholder for actual text generation
-        # You'll need to implement the actual inference logic based on the HOPE model
+        model = model_state.model
+        model.eval()
         
-        # For now, return a mock response indicating the model would generate text
-        return f"[Model Response] This is a generated response to: '{prompt}'. The HOPE model at {os.path.basename(model_state.current_checkpoint)} would process this with temperature={temperature}."
+        # Simple character-level tokenization for demo
+        # (In production, use proper tokenizer)
+        tokens = [ord(c) % 256 for c in prompt[-32:]]  # Take last 32 chars
+        if len(tokens) < 32:
+            tokens = [0] * (32 - len(tokens)) + tokens
+        
+        input_tensor = torch.tensor([tokens], dtype=torch.long).to(model_state.device)
+        
+        # Generate tokens
+        generated = tokens.copy()
+        
+        with torch.no_grad():
+            for _ in range(min(max_length, 50)):  # Limit generation
+                # Get logits
+                logits = model(input_tensor)
+                
+                # Get next token logits
+                next_token_logits = logits[0, -1, :] / temperature
+                
+                # Top-k sampling
+                if top_k > 0:
+                    indices_to_remove = next_token_logits < torch.topk(next_token_logits, top_k)[0][..., -1, None]
+                    next_token_logits[indices_to_remove] = float('-inf')
+                
+                # Sample
+                probs = torch.softmax(next_token_logits, dim=-1)
+                next_token = torch.multinomial(probs, num_samples=1).item()
+                
+                # Stop on padding
+                if next_token == 0:
+                    break
+                
+                generated.append(next_token)
+                
+                # Update input (sliding window)
+                input_tensor = torch.tensor([generated[-32:]], dtype=torch.long).to(model_state.device)
+                if input_tensor.size(1) < 32:
+                    padding = torch.zeros((1, 32 - input_tensor.size(1)), dtype=torch.long).to(model_state.device)
+                    input_tensor = torch.cat([padding, input_tensor], dim=1)
+        
+        # Decode generated tokens
+        generated_text = ''.join([chr(t) if 32 <= t < 127 else '' for t in generated[len(tokens):]])
+        
+        if not generated_text.strip():
+            return f"[Model processed your input. The model is still learning - try training for more steps for better generation]"
+        
+        return generated_text
     except Exception as e:
         return f"[ERROR: Generation failed: {str(e)}]"
 
