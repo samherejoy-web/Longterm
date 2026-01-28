@@ -41,7 +41,8 @@ class ModelState:
             "is_training": False,
             "progress": 0,
             "status": "idle",
-            "message": ""
+            "message": "",
+            "last_result": None
         }
 
 model_state = ModelState()
