@@ -14,7 +14,7 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.nested_learning.model import HOPEModel
-from src.nested_learning.tokenizer import Tokenizer
+from src.nested_learning.tokenizer import SentencePieceTokenizer
 from omegaconf import OmegaConf
 
 app = FastAPI(title="HOPE Model API", version="1.0.0")
