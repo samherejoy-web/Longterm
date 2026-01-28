@@ -260,14 +260,6 @@ def generate_text(prompt: str, max_length: int = 100, temperature: float = 0.8, 
             eos_token = 0  # Padding/EOS for character-level
         
         # Initialize fast state for in-context learning (Nested Learning semantics)
-        fast_state = model_state.fast_state
-        if fast_state is None and hasattr(model, 'init_fast_state'):
-            fast_state = model.init_fast_state()
-            model_state.fast_state = fast_state
-        
-        # Generate tokens autoregressively
-        generated = tokens.copy()
-        eos_token = 1 if model_state.tokenizer else 0
         
         with torch.no_grad():
             for step in range(min(max_length, 100)):
