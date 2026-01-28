@@ -133,13 +133,45 @@ def get_available_configs() -> List[Dict[str, str]]:
 def load_model_from_checkpoint(checkpoint_path: str, config_path: str):
     """Load HOPE model from checkpoint"""
     try:
-        # Load configuration
-        config = OmegaConf.load(config_path)
-        
         # Load checkpoint
         checkpoint = torch.load(checkpoint_path, map_location=model_state.device)
         
-        # Extract model state
+        # Extract config from checkpoint or file
+        if isinstance(checkpoint, dict) and 'config' in checkpoint:
+            config_dict = checkpoint['config']
+        else:
+            # Try loading from config file (JSON or YAML)
+            if config_path.endswith('.json'):
+                with open(config_path, 'r') as f:
+                    config_dict = json.load(f)
+            else:
+                config = OmegaConf.load(config_path)
+                config_dict = OmegaConf.to_container(config.model if hasattr(config, 'model') else config, resolve=True)
+        
+        # Import ModelConfig and LevelSpec
+        from src.nested_learning.model import ModelConfig
+        from src.nested_learning.levels import LevelSpec
+        
+        # Build ModelConfig
+        # Handle nested structures
+        if 'titan_level' in config_dict and isinstance(config_dict['titan_level'], dict):
+            config_dict['titan_level'] = LevelSpec(**config_dict['titan_level'])
+        
+        if 'cms_levels' in config_dict:
+            cms_levels = []
+            for level in config_dict['cms_levels']:
+                if isinstance(level, dict):
+                    cms_levels.append(LevelSpec(**level))
+                else:
+                    cms_levels.append(level)
+            config_dict['cms_levels'] = cms_levels
+        
+        model_config = ModelConfig(**config_dict)
+        
+        # Create model
+        model = HOPEModel(model_config).to(model_state.device)
+        
+        # Load state dict
         if isinstance(checkpoint, dict):
             if "model" in checkpoint:
                 state_dict = checkpoint["model"]
@@ -150,13 +182,17 @@ def load_model_from_checkpoint(checkpoint_path: str, config_path: str):
         else:
             state_dict = checkpoint
         
-        # Create model from config
-        # This is a simplified version - you may need to adjust based on actual model architecture
-        model_config = config.model if hasattr(config, 'model') else config
+        model.load_state_dict(state_dict)
+        model.eval()
         
-        # Store config and checkpoint info
-        model_state.config = config
+        # Initialize fast state for in-context learning
+        fast_state = model.init_fast_state()
+        
+        # Store in global state
+        model_state.model = model
+        model_state.config = model_config
         model_state.current_checkpoint = checkpoint_path
+        model_state.fast_state = fast_state
         
         return True, "Model loaded successfully"
     except Exception as e:
