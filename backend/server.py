@@ -296,20 +296,24 @@ def generate_text(prompt: str, max_length: int = 100, temperature: float = 0.8, 
                 input_tensor = torch.tensor([context_tokens], dtype=torch.long).to(model_state.device)
         
         # Decode generated tokens
-        if model_state.tokenizer is not None:
+        generated_only = generated[len(tokens):]
+        
+        # Check if model vocab_size matches tokenizer (if using tokenizer)
+        if model_state.tokenizer is not None and model_state.config.vocab_size == model_state.tokenizer.vocab_size:
             try:
-                # Use SentencePiece decoder
-                generated_only = generated[len(tokens):]
+                # Use SentencePiece decoder for proper tokenizer models
                 if generated_only:
                     decoded = model_state.tokenizer.processor.decode(generated_only)
                     return decoded if decoded.strip() else "[Model generated empty output. Continue training for better results.]"
                 else:
                     return "[No tokens generated. Model may need more training.]"
             except Exception as e:
-                return f"[Decoding error: {str(e)}. Raw tokens: {generated_only[:20]}...]"
+                # Fallback to character-level if decoding fails
+                generated_text = ''.join([chr(t) if 32 <= t < 127 else '?' for t in generated_only])
+                return generated_text if generated_text.strip() else f"[Decoding error: {str(e)}]"
         else:
-            # Character-level decoding
-            generated_text = ''.join([chr(t) if 32 <= t < 127 else '' for t in generated[len(tokens):]])
+            # Character-level decoding (for vocab_size=256 models)
+            generated_text = ''.join([chr(t) if 32 <= t < 127 else '' for t in generated_only])
             if not generated_text.strip():
                 return "[Model processed input but generated no visible characters. Continue training for better results.]"
             return generated_text
