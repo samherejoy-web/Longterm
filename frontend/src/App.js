@@ -693,22 +693,56 @@ function App() {
               </button>
 
               {/* Training Status */}
-              {trainingStatus?.is_training && (
-                <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <h3 className="font-semibold text-blue-900 mb-2">Training Status</h3>
+              {trainingStatus && (
+                <div className={`mt-6 p-4 border rounded-lg ${
+                  trainingStatus.is_training 
+                    ? 'bg-blue-50 border-blue-200'
+                    : trainingStatus.status === 'completed'
+                    ? 'bg-green-50 border-green-200'
+                    : trainingStatus.status === 'failed' || trainingStatus.status === 'error'
+                    ? 'bg-red-50 border-red-200'
+                    : 'bg-gray-50 border-gray-200'
+                }`} data-testid="training-status-panel">
+                  <h3 className={`font-semibold mb-2 ${
+                    trainingStatus.is_training ? 'text-blue-900' :
+                    trainingStatus.status === 'completed' ? 'text-green-900' :
+                    trainingStatus.status === 'failed' || trainingStatus.status === 'error' ? 'text-red-900' :
+                    'text-gray-900'
+                  }`}>
+                    {trainingStatus.is_training ? '⏳ Training In Progress' : 
+                     trainingStatus.status === 'completed' ? '✅ Training Completed' :
+                     trainingStatus.status === 'failed' || trainingStatus.status === 'error' ? '❌ Training Failed' :
+                     '📊 Training Status'}
+                  </h3>
                   <div className="space-y-2">
-                    <p className="text-sm text-blue-800">Status: {trainingStatus.status}</p>
-                    <p className="text-sm text-blue-800">Progress: {trainingStatus.progress}%</p>
+                    <p className={`text-sm ${trainingStatus.is_training ? 'text-blue-800' : trainingStatus.status === 'completed' ? 'text-green-800' : 'text-red-800'}`}>
+                      Status: {trainingStatus.status}
+                    </p>
+                    {trainingStatus.is_training && (
+                      <p className="text-sm text-blue-800">Progress: {trainingStatus.progress}%</p>
+                    )}
                     {trainingStatus.message && (
-                      <p className="text-sm text-blue-700">{trainingStatus.message}</p>
+                      <p className={`text-sm ${trainingStatus.is_training ? 'text-blue-700' : trainingStatus.status === 'completed' ? 'text-green-700' : 'text-red-700'}`}>
+                        {trainingStatus.message}
+                      </p>
+                    )}
+                    {trainingStatus.last_result && trainingStatus.status === 'completed' && (
+                      <div className="mt-3 p-3 bg-green-100 rounded text-sm text-green-900">
+                        <p className="font-semibold">Training Results:</p>
+                        <p>• Config: {trainingStatus.last_result.config}</p>
+                        <p>• Steps: {trainingStatus.last_result.steps}</p>
+                        <p>• Checkpoint: {trainingStatus.last_result.checkpoint_dir}</p>
+                      </div>
                     )}
                   </div>
-                  <div className="mt-3 w-full bg-blue-200 rounded-full h-2">
-                    <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${trainingStatus.progress}%` }}
-                    ></div>
-                  </div>
+                  {trainingStatus.is_training && (
+                    <div className="mt-3 w-full bg-blue-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                        style={{ width: `${trainingStatus.progress}%` }}
+                      ></div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
