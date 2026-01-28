@@ -362,6 +362,58 @@ async def upload_training_data(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
 
+def run_training_background(config_name: str, steps: int, base_checkpoint: str = None):
+    """Background task to run training"""
+    try:
+        model_state.training_status.update({
+            "is_training": True,
+            "progress": 10,
+            "status": "running",
+            "message": f"Training {config_name} for {steps} steps..."
+        })
+        
+        # Import training function
+        sys.path.insert(0, '/app/scripts')
+        from train_simple import run_training
+        
+        # Determine checkpoint directory
+        checkpoint_dir = f"artifacts/checkpoints/{config_name}_run"
+        
+        # Run training
+        result = run_training(
+            config_name=config_name,
+            steps=steps,
+            device=str(model_state.device),
+            checkpoint_dir=checkpoint_dir
+        )
+        
+        if result["success"]:
+            model_state.training_status.update({
+                "is_training": False,
+                "progress": 100,
+                "status": "completed",
+                "message": f"Training completed successfully! Checkpoint saved to {checkpoint_dir}",
+                "last_result": {
+                    "checkpoint_dir": checkpoint_dir,
+                    "steps": steps,
+                    "config": config_name
+                }
+            })
+        else:
+            model_state.training_status.update({
+                "is_training": False,
+                "progress": 0,
+                "status": "failed",
+                "message": f"Training failed: {result['stderr'][:200]}"
+            })
+    except Exception as e:
+        model_state.training_status.update({
+            "is_training": False,
+            "progress": 0,
+            "status": "error",
+            "message": f"Training error: {str(e)}\n{traceback.format_exc()}"
+        })
+
 @app.post("/api/train/start")
 async def start_training(request: TrainRequest, background_tasks: BackgroundTasks):
     """Start model training"""
@@ -377,9 +429,17 @@ async def start_training(request: TrainRequest, background_tasks: BackgroundTask
             "message": "Initializing training..."
         })
         
+        # Start training in background
+        background_tasks.add_task(
+            run_training_background,
+            config_name=request.config_name,
+            steps=request.steps,
+            base_checkpoint=request.base_checkpoint
+        )
+        
         return {
             "success": True,
-            "message": "Training started",
+            "message": "Training started in background",
             "config": request.config_name,
             "base_checkpoint": request.base_checkpoint,
             "steps": request.steps
