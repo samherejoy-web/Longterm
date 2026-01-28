@@ -3,7 +3,9 @@ import axios from 'axios';
 import './App.css';
 import TraitsPanel from './TraitsPanel';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
+// Use empty string for relative paths in production (Kubernetes ingress handles routing)
+// Backend API routes with /api prefix are automatically routed to backend service
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 
 function App() {
   // State management
