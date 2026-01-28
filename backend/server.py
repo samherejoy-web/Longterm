@@ -233,8 +233,13 @@ def generate_text(prompt: str, max_length: int = 100, temperature: float = 0.8, 
         model = model_state.model
         model.eval()
         
-        # Use tokenizer if available, otherwise fallback to character-level
-        if model_state.tokenizer is not None:
+        # Use tokenizer if available AND vocab matches, otherwise use character-level
+        use_proper_tokenizer = (
+            model_state.tokenizer is not None and 
+            model_state.config.vocab_size == model_state.tokenizer.vocab_size
+        )
+        
+        if use_proper_tokenizer:
             # Encode with proper tokenizer
             token_tensor = model_state.tokenizer.encode(prompt, add_bos=True, add_eos=False)
             tokens = token_tensor.tolist()
@@ -245,12 +250,14 @@ def generate_text(prompt: str, max_length: int = 100, temperature: float = 0.8, 
                 tokens = tokens[-max_context:]
             
             input_tensor = torch.tensor([tokens], dtype=torch.long).to(model_state.device)
+            eos_token = 1  # SentencePiece EOS
         else:
-            # Fallback: character-level tokenization
-            tokens = [ord(c) % 256 for c in prompt[-32:]]
+            # Character-level tokenization (for vocab_size=256 models)
+            tokens = [min(ord(c), 255) for c in prompt[-32:]]
             if len(tokens) < 32:
                 tokens = [0] * (32 - len(tokens)) + tokens
             input_tensor = torch.tensor([tokens], dtype=torch.long).to(model_state.device)
+            eos_token = 0  # Padding/EOS for character-level
         
         # Initialize fast state for in-context learning (Nested Learning semantics)
         fast_state = model_state.fast_state
