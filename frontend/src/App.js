@@ -271,6 +271,17 @@ function App() {
             🤖 Models
           </button>
           <button
+            onClick={() => setActiveTab('traits')}
+            className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${
+              activeTab === 'traits'
+                ? 'bg-white text-purple-600 shadow-lg'
+                : 'text-white hover:bg-white/20'
+            }`}
+            data-testid="tab-traits"
+          >
+            🧬 Traits
+          </button>
+          <button
             onClick={() => setActiveTab('train')}
             className={`flex-1 py-2 px-4 rounded-md font-medium transition-all ${
               activeTab === 'train'
