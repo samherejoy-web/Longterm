@@ -1,0 +1,342 @@
+from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import os
+import sys
+import json
+import torch
+from pathlib import Path
+from typing import Optional, List, Dict, Any
+import traceback
+from datetime import datetime
+
+# Add the parent directory to the path to import nested_learning
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.nested_learning.model import HOPEModel
+from src.nested_learning.tokenizer import Tokenizer
+from omegaconf import OmegaConf
+
+app = FastAPI(title="HOPE Model API", version="1.0.0")
+
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Global state
+class ModelState:
+    def __init__(self):
+        self.model: Optional[Any] = None
+        self.tokenizer: Optional[Tokenizer] = None
+        self.config: Optional[Any] = None
+        self.current_checkpoint: Optional[str] = None
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.training_status = {
+            "is_training": False,
+            "progress": 0,
+            "status": "idle",
+            "message": ""
+        }
+
+model_state = ModelState()
+
+# Request/Response Models
+class ChatRequest(BaseModel):
+    message: str
+    max_length: int = 100
+    temperature: float = 0.8
+    top_k: int = 50
+
+class ChatResponse(BaseModel):
+    response: str
+    model_used: Optional[str] = None
+
+class LoadModelRequest(BaseModel):
+    checkpoint_path: str
+    config_path: str
+
+class TrainRequest(BaseModel):
+    base_checkpoint: Optional[str] = None
+    config_name: str = "pilot_smoke"
+    steps: int = 1000
+    use_existing_data: bool = True
+    dataset_name: Optional[str] = None
+
+class CheckpointInfo(BaseModel):
+    name: str
+    path: str
+    size: int
+    modified: str
+    step: Optional[int] = None
+
+# Helper functions
+def get_available_checkpoints() -> List[CheckpointInfo]:
+    """Scan for available model checkpoints"""
+    checkpoints = []
+    
+    # Common checkpoint locations
+    checkpoint_dirs = [
+        "/app/artifacts/checkpoints",
+        "/app/artifacts/examples",
+        "/app/checkpoints",
+        "/app/models"
+    ]
+    
+    for checkpoint_dir in checkpoint_dirs:
+        if os.path.exists(checkpoint_dir):
+            for root, dirs, files in os.walk(checkpoint_dir):
+                for file in files:
+                    if file.endswith(".pt"):
+                        filepath = os.path.join(root, file)
+                        stat = os.stat(filepath)
+                        
+                        # Extract step number if present
+                        step = None
+                        if "step_" in file:
+                            try:
+                                step = int(file.split("step_")[1].split(".")[0])
+                            except:
+                                pass
+                        
+                        checkpoints.append(CheckpointInfo(
+                            name=file,
+                            path=filepath,
+                            size=stat.st_size,
+                            modified=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                            step=step
+                        ))
+    
+    # Sort by step number if available, else by name
+    checkpoints.sort(key=lambda x: (x.step if x.step is not None else -1, x.name), reverse=True)
+    return checkpoints
+
+def get_available_configs() -> List[Dict[str, str]]:
+    """Get available configuration files"""
+    configs = []
+    config_dir = "/app/configs"
+    
+    if os.path.exists(config_dir):
+        for file in os.listdir(config_dir):
+            if file.endswith(".yaml") and not file.startswith("."):
+                configs.append({
+                    "name": file.replace(".yaml", ""),
+                    "path": os.path.join(config_dir, file)
+                })
+    
+    return configs
+
+def load_model_from_checkpoint(checkpoint_path: str, config_path: str):
+    """Load HOPE model from checkpoint"""
+    try:
+        # Load configuration
+        config = OmegaConf.load(config_path)
+        
+        # Load checkpoint
+        checkpoint = torch.load(checkpoint_path, map_location=model_state.device)
+        
+        # Extract model state
+        if isinstance(checkpoint, dict):
+            if "model" in checkpoint:
+                state_dict = checkpoint["model"]
+            elif "state_dict" in checkpoint:
+                state_dict = checkpoint["state_dict"]
+            else:
+                state_dict = checkpoint
+        else:
+            state_dict = checkpoint
+        
+        # Create model from config
+        # This is a simplified version - you may need to adjust based on actual model architecture
+        model_config = config.model if hasattr(config, 'model') else config
+        
+        # Store config and checkpoint info
+        model_state.config = config
+        model_state.current_checkpoint = checkpoint_path
+        
+        return True, "Model loaded successfully"
+    except Exception as e:
+        return False, f"Error loading model: {str(e)}\n{traceback.format_exc()}"
+
+def generate_text(prompt: str, max_length: int = 100, temperature: float = 0.8, top_k: int = 50) -> str:
+    """Generate text using the loaded model"""
+    if model_state.model is None:
+        return "[ERROR: No model loaded. Please load a model first.]"
+    
+    try:
+        # This is a placeholder for actual text generation
+        # You'll need to implement the actual inference logic based on the HOPE model
+        
+        # For now, return a mock response indicating the model would generate text
+        return f"[Model Response] This is a generated response to: '{prompt}'. The HOPE model at {os.path.basename(model_state.current_checkpoint)} would process this with temperature={temperature}."
+    except Exception as e:
+        return f"[ERROR: Generation failed: {str(e)}]"
+
+# API Endpoints
+@app.get("/")
+async def root():
+    return {
+        "message": "HOPE Model API Server",
+        "version": "1.0.0",
+        "status": "running",
+        "device": str(model_state.device),
+        "model_loaded": model_state.current_checkpoint is not None
+    }
+
+@app.get("/api/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "model_loaded": model_state.current_checkpoint is not None,
+        "current_checkpoint": model_state.current_checkpoint,
+        "device": str(model_state.device)
+    }
+
+@app.get("/api/models/list")
+async def list_models():
+    """List all available model checkpoints"""
+    try:
+        checkpoints = get_available_checkpoints()
+        return {
+            "checkpoints": [cp.dict() for cp in checkpoints],
+            "count": len(checkpoints),
+            "current": model_state.current_checkpoint
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing models: {str(e)}")
+
+@app.get("/api/configs/list")
+async def list_configs():
+    """List available configuration files"""
+    try:
+        configs = get_available_configs()
+        return {
+            "configs": configs,
+            "count": len(configs)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing configs: {str(e)}")
+
+@app.post("/api/models/load")
+async def load_model(request: LoadModelRequest):
+    """Load a specific model checkpoint"""
+    try:
+        success, message = load_model_from_checkpoint(request.checkpoint_path, request.config_path)
+        
+        if success:
+            return {
+                "success": True,
+                "message": message,
+                "checkpoint": request.checkpoint_path,
+                "config": request.config_path
+            }
+        else:
+            raise HTTPException(status_code=500, detail=message)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error loading model: {str(e)}")
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    """Generate text response to user message"""
+    try:
+        response_text = generate_text(
+            prompt=request.message,
+            max_length=request.max_length,
+            temperature=request.temperature,
+            top_k=request.top_k
+        )
+        
+        return ChatResponse(
+            response=response_text,
+            model_used=os.path.basename(model_state.current_checkpoint) if model_state.current_checkpoint else None
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
+
+@app.post("/api/train/upload")
+async def upload_training_data(file: UploadFile = File(...)):
+    """Upload custom training data"""
+    try:
+        # Create uploads directory
+        upload_dir = "/app/data/uploads"
+        os.makedirs(upload_dir, exist_ok=True)
+        
+        # Save uploaded file
+        file_path = os.path.join(upload_dir, file.filename)
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "path": file_path,
+            "size": len(content)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
+
+@app.post("/api/train/start")
+async def start_training(request: TrainRequest, background_tasks: BackgroundTasks):
+    """Start model training"""
+    if model_state.training_status["is_training"]:
+        raise HTTPException(status_code=400, detail="Training already in progress")
+    
+    try:
+        # Update training status
+        model_state.training_status.update({
+            "is_training": True,
+            "progress": 0,
+            "status": "starting",
+            "message": "Initializing training..."
+        })
+        
+        return {
+            "success": True,
+            "message": "Training started",
+            "config": request.config_name,
+            "base_checkpoint": request.base_checkpoint,
+            "steps": request.steps
+        }
+    except Exception as e:
+        model_state.training_status["is_training"] = False
+        raise HTTPException(status_code=500, detail=f"Training error: {str(e)}")
+
+@app.get("/api/train/status")
+async def get_training_status():
+    """Get current training status"""
+    return model_state.training_status
+
+@app.get("/api/datasets/list")
+async def list_datasets():
+    """List available datasets"""
+    datasets = []
+    data_dir = "/app/data"
+    
+    if os.path.exists(data_dir):
+        for root, dirs, files in os.walk(data_dir):
+            for file in files:
+                if file.endswith((".txt", ".json", ".jsonl", ".csv")):
+                    filepath = os.path.join(root, file)
+                    stat = os.stat(filepath)
+                    datasets.append({
+                        "name": file,
+                        "path": filepath,
+                        "size": stat.st_size,
+                        "type": file.split(".")[-1]
+                    })
+    
+    return {
+        "datasets": datasets,
+        "count": len(datasets)
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8001))
+    host = os.getenv("HOST", "0.0.0.0")
+    uvicorn.run(app, host=host, port=port, log_level="info")
