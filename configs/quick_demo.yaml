@@ -1,0 +1,99 @@
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  job:
+    chdir: false
+
+model:
+  vocab_size: 256  # Character-level for quick demo
+  dim: 128
+  num_layers: 2
+  heads: 4
+  block_variant: hope_attention  # Use HOPE attention variant
+  teach_scale: 1.0
+  teach_clip: 0.0
+  qk_l2_norm: true
+  local_conv_window: 4
+  
+  # TITAN memory configuration
+  titan_level:
+    name: titan
+    update_period: 8
+    optimizer_key: titan_opt
+  
+  # CMS (Continual Memory System) hierarchical levels
+  cms_levels:
+    - name: cms_fast
+      update_period: 1  # Fast updates every step
+      optimizer_key: cms_opt
+    - name: cms_mid
+      update_period: 4  # Medium updates
+      optimizer_key: cms_opt
+    - name: cms_slow
+      update_period: 16  # Slow updates
+      optimizer_key: cms_opt
+  
+  cms_use_layernorm: true
+  cms_flush_partial_at_end: false
+  
+  # Memory module optimizers (nested learning)
+  optimizers:
+    titan_opt:
+      type: deep_momentum
+      lr: 1.0e-3
+      params:
+        beta: 0.9
+        beta2: 0.999
+    cms_opt:
+      type: deep_momentum
+      lr: 5.0e-4
+      params:
+        beta: 0.9
+        beta2: 0.999
+
+data:
+  source: synthetic
+  vocab_size: 256
+  seq_len: 64
+  dataset_size: 500  # Small for quick training
+  batch_size: 4
+  num_workers: 0
+
+train:
+  # Enable HOPE/CMS/Titans mechanisms
+  online_updates: true  # Enable online memory updates (key for Nested Learning)
+  online_chunk_size: 0  # Auto-infer from CMS update periods
+  per_layer_teach_signal: false  # Use global teach signal
+  use_fast_state: false  # Use meta-parameter updates during training
+  
+  steps: 200  # Quick demo training
+  log_interval: 20
+  device: "cpu"
+  seed: 42
+  deterministic: false
+  
+  mixed_precision:
+    enabled: false
+    dtype: bf16
+  
+  compile:
+    enable: false
+  
+  checkpoint:
+    enable: true
+    dir: artifacts/checkpoints/quick_demo
+    save_interval: 100
+    save_last: true
+
+optim:
+  type: adamw
+  lr: 3.0e-4
+  weight_decay: 0.01
+  fused: false
+  param_policy: all  # Train all parameters
+
+logging:
+  enabled: true
+  backend: json
+  path: logs/quick_demo.json
