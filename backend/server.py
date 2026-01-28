@@ -206,7 +206,7 @@ def load_model_from_checkpoint(checkpoint_path: str, config_path: str):
         return False, f"Error loading model: {str(e)}\n{traceback.format_exc()}"
 
 def generate_text(prompt: str, max_length: int = 100, temperature: float = 0.8, top_k: int = 50) -> str:
-    """Generate text using the loaded model"""
+    """Generate text using the loaded model with proper tokenization and HOPE mechanisms"""
     if model_state.model is None:
         return "[ERROR: No model loaded. Please load a model first.]"
     
@@ -214,55 +214,89 @@ def generate_text(prompt: str, max_length: int = 100, temperature: float = 0.8, 
         model = model_state.model
         model.eval()
         
-        # Simple character-level tokenization for demo
-        # (In production, use proper tokenizer)
-        tokens = [ord(c) % 256 for c in prompt[-32:]]  # Take last 32 chars
-        if len(tokens) < 32:
-            tokens = [0] * (32 - len(tokens)) + tokens
+        # Use tokenizer if available, otherwise fallback to character-level
+        if model_state.tokenizer is not None:
+            # Encode with proper tokenizer
+            token_tensor = model_state.tokenizer.encode(prompt, add_bos=True, add_eos=False)
+            tokens = token_tensor.tolist()
+            
+            # Limit context length
+            max_context = 128
+            if len(tokens) > max_context:
+                tokens = tokens[-max_context:]
+            
+            input_tensor = torch.tensor([tokens], dtype=torch.long).to(model_state.device)
+        else:
+            # Fallback: character-level tokenization
+            tokens = [ord(c) % 256 for c in prompt[-32:]]
+            if len(tokens) < 32:
+                tokens = [0] * (32 - len(tokens)) + tokens
+            input_tensor = torch.tensor([tokens], dtype=torch.long).to(model_state.device)
         
-        input_tensor = torch.tensor([tokens], dtype=torch.long).to(model_state.device)
+        # Initialize fast state for in-context learning (Nested Learning semantics)
+        fast_state = model_state.fast_state
+        if fast_state is None and hasattr(model, 'init_fast_state'):
+            fast_state = model.init_fast_state()
+            model_state.fast_state = fast_state
         
-        # Generate tokens
+        # Generate tokens autoregressively
         generated = tokens.copy()
+        eos_token = 1 if model_state.tokenizer else 0
         
         with torch.no_grad():
-            for _ in range(min(max_length, 50)):  # Limit generation
-                # Get logits
-                logits = model(input_tensor)
+            for step in range(min(max_length, 100)):
+                # Forward pass with fast state (HOPE/CMS/Titans mechanisms)
+                if fast_state is not None:
+                    logits = model(input_tensor, fast_state=fast_state)
+                else:
+                    logits = model(input_tensor)
                 
                 # Get next token logits
-                next_token_logits = logits[0, -1, :] / temperature
+                next_token_logits = logits[0, -1, :] / max(temperature, 0.1)
                 
                 # Top-k sampling
                 if top_k > 0:
-                    indices_to_remove = next_token_logits < torch.topk(next_token_logits, top_k)[0][..., -1, None]
+                    top_k_actual = min(top_k, next_token_logits.size(-1))
+                    indices_to_remove = next_token_logits < torch.topk(next_token_logits, top_k_actual)[0][..., -1, None]
                     next_token_logits[indices_to_remove] = float('-inf')
                 
-                # Sample
+                # Sample from distribution
                 probs = torch.softmax(next_token_logits, dim=-1)
                 next_token = torch.multinomial(probs, num_samples=1).item()
                 
-                # Stop on padding
-                if next_token == 0:
+                # Stop on EOS or padding
+                if next_token in [0, eos_token]:
                     break
                 
                 generated.append(next_token)
                 
-                # Update input (sliding window)
-                input_tensor = torch.tensor([generated[-32:]], dtype=torch.long).to(model_state.device)
-                if input_tensor.size(1) < 32:
-                    padding = torch.zeros((1, 32 - input_tensor.size(1)), dtype=torch.long).to(model_state.device)
-                    input_tensor = torch.cat([padding, input_tensor], dim=1)
+                # Update input tensor for next iteration
+                # Use sliding window to maintain context length
+                max_len = 128 if model_state.tokenizer else 32
+                context_tokens = generated[-max_len:]
+                input_tensor = torch.tensor([context_tokens], dtype=torch.long).to(model_state.device)
         
         # Decode generated tokens
-        generated_text = ''.join([chr(t) if 32 <= t < 127 else '' for t in generated[len(tokens):]])
-        
-        if not generated_text.strip():
-            return f"[Model processed your input. The model is still learning - try training for more steps for better generation]"
-        
-        return generated_text
+        if model_state.tokenizer is not None:
+            try:
+                # Use SentencePiece decoder
+                generated_only = generated[len(tokens):]
+                if generated_only:
+                    decoded = model_state.tokenizer.processor.decode(generated_only)
+                    return decoded if decoded.strip() else "[Model generated empty output. Continue training for better results.]"
+                else:
+                    return "[No tokens generated. Model may need more training.]"
+            except Exception as e:
+                return f"[Decoding error: {str(e)}. Raw tokens: {generated_only[:20]}...]"
+        else:
+            # Character-level decoding
+            generated_text = ''.join([chr(t) if 32 <= t < 127 else '' for t in generated[len(tokens):]])
+            if not generated_text.strip():
+                return "[Model processed input but generated no visible characters. Continue training for better results.]"
+            return generated_text
+            
     except Exception as e:
-        return f"[ERROR: Generation failed: {str(e)}]"
+        return f"[ERROR: Generation failed: {str(e)}\n{traceback.format_exc()[:200]}]"
 
 # API Endpoints
 @app.get("/")
