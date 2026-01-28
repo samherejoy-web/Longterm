@@ -30,6 +30,7 @@ function App() {
 
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const statusPollInterval = useRef(null);
 
   // Load initial data
   useEffect(() => {
@@ -38,6 +39,35 @@ function App() {
     loadDatasets();
     checkHealth();
   }, []);
+
+  // Poll training status when training is active
+  useEffect(() => {
+    if (trainingStatus?.is_training) {
+      statusPollInterval.current = setInterval(async () => {
+        try {
+          const response = await axios.get(`${BACKEND_URL}/api/train/status`);
+          setTrainingStatus(response.data);
+          
+          // Stop polling if training completed or failed
+          if (!response.data.is_training) {
+            clearInterval(statusPollInterval.current);
+            // Reload checkpoints if training completed successfully
+            if (response.data.status === 'completed') {
+              await loadCheckpoints();
+            }
+          }
+        } catch (error) {
+          console.error('Failed to poll training status:', error);
+        }
+      }, 2000); // Poll every 2 seconds
+    }
+    
+    return () => {
+      if (statusPollInterval.current) {
+        clearInterval(statusPollInterval.current);
+      }
+    };
+  }, [trainingStatus?.is_training]);
 
   // Auto-scroll chat
   useEffect(() => {
