@@ -32,7 +32,7 @@ app.add_middleware(
 class ModelState:
     def __init__(self):
         self.model: Optional[Any] = None
-        self.tokenizer: Optional[Tokenizer] = None
+        self.tokenizer: Optional[SentencePieceTokenizer] = None
         self.config: Optional[Any] = None
         self.current_checkpoint: Optional[str] = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
