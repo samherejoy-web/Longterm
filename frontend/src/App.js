@@ -566,6 +566,22 @@ function App() {
                 </div>
               </div>
 
+              {/* Synthetic Data Generation */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                <h3 className="font-semibold text-blue-900 mb-2">🔬 Quick Start: Generate Synthetic Data</h3>
+                <p className="text-sm text-blue-700 mb-3">
+                  Create synthetic training data with simple patterns for quick testing
+                </p>
+                <button
+                  onClick={createSyntheticData}
+                  disabled={isLoading}
+                  className="w-full py-3 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg font-medium hover:shadow-lg transition-all disabled:opacity-50"
+                  data-testid="create-synthetic-button"
+                >
+                  {isLoading ? '⏳ Creating...' : '✨ Create Synthetic Data'}
+                </button>
+              </div>
+
               {/* Dataset Selection or File Upload */}
               {useExistingData ? (
                 <div>
@@ -587,7 +603,7 @@ function App() {
                   </select>
                   {datasets.length === 0 && (
                     <p className="text-sm text-gray-500 mt-2">
-                      No datasets found. Run the data pipeline or upload custom data.
+                      No datasets found. Click "Create Synthetic Data" above to get started.
                     </p>
                   )}
                 </div>
